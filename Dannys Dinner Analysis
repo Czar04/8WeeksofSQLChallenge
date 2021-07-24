@@ -1,0 +1,152 @@
+-- 1. What is the total amount each customer spent at the restaurant?
+Use [Dannys Dinner]
+Go
+
+Select s.CustomerID,  Sum(m.Price) as 'Total Amount'
+From Sales s
+Inner Join Menu m on m.ProductID = s.ProductID
+Group by s.CustomerID
+order by Sum(m.Price) Desc;
+
+-- 2. How many days has each customer visited the restaurant?
+
+Select CustomerID, Count([Order Date]) as 'Customer Visits(Days)'
+From Sales 
+Group By CustomerID;
+
+-- 3. What was the first item from the menu purchased by each customer?
+
+Select * 
+From 
+
+	( Select s.CustomerID,m.[Product Name], s.[Order Date],
+	ROW_NUMBER () OVER (Partition by s.CustomerID Order By s.[Order Date]) as 'Rank of Item'
+	From Sales s
+	Inner Join Menu m on m.ProductID = s.ProductID ) x
+
+Where x.[Rank of Item] < 2;
+
+-- 4. What is the most purchased item on the menu and how many times was it purchased by all customers?
+Select m.[Product Name], Count(s.ProductID) as 'Number of Purchase'
+From Sales s
+Inner Join Menu m on m.ProductID = s.ProductID
+Group By m.[Product Name]
+Order by Count(s.ProductID) Desc;
+
+-- 5. Which item was the most popular for each customer?
+Select q.CustomerID,q.[Product Name],q.[Popular Item]	
+From
+	( Select p.*, 
+	  Max(p.[Item Orders]) Over (Partition by p.CustomerID Order by p.[Item Orders] Desc) as 'Popular Item'
+	  From 
+	      (	Select s.CustomerID,m.[Product Name],Count(s.ProductID) as 'Item Orders'
+
+			From Sales s
+			Inner Join Menu m on m.ProductID = s.ProductID
+			Group By s.CustomerID,m.[Product Name]
+			)  p  ) q
+Where q.[Popular Item] = q.[Item Orders];
+-- 6. Which item was purchased first by the customer after they became a member?
+
+
+Select p.CustomerID,p.[Product Name],p.[Order Date],P.[Join Date],P.[Member Orders] as 'First Item Purchased'
+From
+	(Select s.CustomerID, m.[Product Name],s.[Order Date], mb.[Join Date],
+	Rank () over (Partition by s.CustomerID Order by s.[Order Date]) as 'Member Orders'
+
+	From Sales s
+	Inner join Menu m on m.ProductID = s.ProductID
+	inner join Members mb on mb.CustomerID = s.CustomerID
+	Where s.[Order Date] >= mb.[Join Date] ) p
+Where p.[Member Orders] = 1;
+
+
+-- 7. Which item was purchased just before the customer became a member?
+
+Select p.CustomerID,p.[Product Name],p.[Order Date],P.[Join Date],P.[Member Orders] as 'Last Item Purchased'
+From
+	(Select s.CustomerID, m.[Product Name],s.[Order Date], mb.[Join Date],
+	Rank () over (Partition by s.CustomerID Order by s.[Order Date] Desc) as 'Member Orders'
+
+	From Sales s
+	Inner join Menu m on m.ProductID = s.ProductID
+	inner join Members mb on mb.CustomerID = s.CustomerID
+	Where s.[Order Date] < mb.[Join Date] ) p
+Where p.[Member Orders] = 1;
+
+-- 8. What is the total items and amount spent for each member before they became a member?
+
+Select o.CustomerID, sum(o.TotalItems) as 'Total Items', Sum(o.[Total Amount]) as 'Total Amount'
+
+From
+
+	(Select s.CustomerID, m.[Product Name],s.[Order Date],mb.[Join Date],--s.ProductID,m.Price,
+
+		Case
+		When s.[Order Date] < mb.[Join Date] Then Count(s.ProductID)
+		Else 0
+		End as 'TotalItems',
+
+		Case
+		When s.[Order Date] < mb.[Join Date] Then Sum(m.Price)
+		Else 0
+		End as 'Total Amount'
+		From Sales s
+
+		Inner join Menu m on m.ProductID = s.ProductID
+		Inner Join Members mb on mb.CustomerID = s.CustomerID
+		
+		Group By s.CustomerID, m.[Product Name], s.[Order Date], mb.[Join Date]) o
+
+Group By o.CustomerID;
+
+-- 9.  If each $1 spent equates to 10 points and sushi has a 2x points multiplier 
+-- how many points would each customer have?
+
+Select o.CustomerID, Sum(o.CustomerPoints) as 'Customer Points'
+
+From
+
+	(Select s.CustomerID,m.[Product Name],
+
+	Case
+	When
+	m.[Product Name] = 'sushi'
+	Then Sum(m.Price)*10*2
+	Else Sum(m.Price)*10 
+	End as 'CustomerPoints'
+
+	From Sales s
+
+	Inner Join Menu m on m.ProductID = s.ProductID
+
+	Group by s.CustomerID, m.[Product Name]) o
+
+Group by o.CustomerID;
+
+-- 10. In the first week after a customer joins the program 
+--(including their join date) they earn 2x points on all items, 
+--not just sushi - how many points do customer A and B have at the end of January?
+
+Select o.CustomerID,
+Sum(o.CustomerPoints) as 'Customer Points'
+
+From
+	(	Select s.CustomerID,s.[Order Date],mb.[Join Date],m.Price,
+
+		Case 
+		When s.[Order Date] < mb.[Join Date] and (m.[Product Name] like 'curry' or m.[Product Name] like 'ramen' ) Then Sum(m.Price*10)
+		When s.[Order Date] < mb.[Join Date] and (m.[Product Name] like 'sushi' ) Then Sum(m.Price*10*2)
+		When Datediff(Day,mb.[Join Date],s.[Order Date]) Between 0 and 7 Then Sum(m.Price*10*2)
+		When s.[Order Date] > '2021-01-30' Then Sum(m.Price*0)
+		Else Sum(m.Price*10)
+		End as 'CustomerPoints'
+
+		From Sales s
+
+		Inner Join Menu m on m.ProductID = s.ProductID
+		Inner Join Members mb on mb.CustomerID =s.CustomerID
+
+		Group by s.CustomerID,m.[Product Name],s.[Order Date], mb.[Join Date], m.Price) o
+
+	Group by o.CustomerID;
